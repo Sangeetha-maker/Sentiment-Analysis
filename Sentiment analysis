@@ -1,0 +1,97 @@
+# app.py
+from flask import Flask, request, jsonify
+from textblob import TextBlob
+import numpy as np
+import matplotlib.pyplot as plt
+from io import BytesIO
+import base64
+
+app = Flask(__name__)
+
+@app.route('/analyze', methods=['POST'])
+def analyze():
+    text = request.json['text']
+    analysis = TextBlob(text)
+    
+    # Get sentiment polarity (-1 to 1)
+    polarity = analysis.sentiment.polarity
+    
+    # Categorize sentiment
+    if polarity > 0:
+        sentiment = "positive"
+    elif polarity < 0:
+        sentiment = "negative"
+    else:
+        sentiment = "neutral"
+    
+    # Generate visualization
+    img = generate_chart(polarity)
+    
+    return jsonify({
+        "text": text,
+        "sentiment": sentiment,
+        "polarity": polarity,
+        "chart": img
+    })
+
+def generate_chart(polarity):
+    labels = ['Negative', 'Neutral', 'Positive']
+    values = [
+        max(0, -polarity), 
+        max(0, 1 - abs(polarity)), 
+        max(0, polarity)
+    ]
+    
+    fig, ax = plt.subplots()
+    ax.bar(labels, values, color=['red', 'gray', 'green'])
+    ax.set_ylim(0, 1)
+    
+    buf = BytesIO()
+    plt.savefig(buf, format='png')
+    buf.seek(0)
+    img = base64.b64encode(buf.read()).decode('ascii')
+    plt.close()
+    
+    return img
+
+if __name__ == '__main__':
+    app.run(debug=True)
+<!-- templates/index.html -->
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Sentiment Analysis</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <h1>Sentiment Analysis Tool</h1>
+    <textarea id="textInput" rows="4" cols="50"></textarea>
+    <button onclick="analyzeText()">Analyze</button>
+    <div id="result"></div>
+    <div id="chartContainer">
+        <img id="sentimentChart" style="max-width: 400px;">
+    </div>
+
+    <script>
+        async function analyzeText() {
+            const text = document.getElementById('textInput').value;
+            const response = await fetch('/analyze', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text })
+            });
+            
+            const data = await response.json();
+            
+            document.getElementById('result').innerHTML = `
+                <p>Text: ${data.text}</p>
+                <p>Sentiment: ${data.sentiment}</p>
+                <p>Polarity Score: ${data.polarity.toFixed(2)}</p>
+            `;
+            
+            document.getElementById('sentimentChart').src = 
+                `data:image/png;base64,${data.chart}`;
+        }
+    </script>
+</body>
+</html>
